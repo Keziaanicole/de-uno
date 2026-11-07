@@ -20,7 +20,11 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "De Uno",
+      "shortName": "De Uno",
+      "themeColor": "#0c0907",
+      "backgroundColor": "#0c0907"
     },
     "plugins": [
       "expo-font",

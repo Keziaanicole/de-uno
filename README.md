@@ -2,7 +2,7 @@
 
 A Spanish tutor for iPhone. It finds your level, then gives you endless typed-sentence practice with corrections and spaced review. It also has a grammar library and roleplay conversations. Champagne-and-city-lights night theme; correct answers sparkle.
 
-- **Práctica** — one card at a time, no modules. Every answer is a full sentence you type. Claude grades it, shows your mistakes, and decides what comes next. Topics you miss come back a few cards later; topics you know come back after growing gaps.
+- **Práctica** — one card at a time, no modules. Every answer is a full sentence you type. The AI tutor grades it, shows your mistakes, and decides what comes next. Topics you miss come back a few cards later; topics you know come back after growing gaps.
 - **Gramática** — 36 topics from A1 to C1 with tables, examples and "watch out" notes. Status (Nuevo / En progreso / Dominado) updates as you practice.
 - **Rol** — 8 scenes plus your own. Your partner talks at your level and corrects each message.
 
@@ -14,11 +14,11 @@ iPhone app (Expo / React Native)
    ├──────────────────────────────────────────────────▶│ Supabase                 │
    │  asks the tutor: generate / grade / roleplay      │  • Auth (email codes)    │
    └──────────────────────────────────────────────────▶│  • profiles, usage tables│
-                                                       │  • Edge Function "tutor" │──▶ Claude API
+                                                       │  • Edge Function "tutor" │──▶ Gemini API (or Claude)
                                                        └──────────────────────────┘
 ```
 
-The Anthropic API key lives only in the Supabase Edge Function, never in the app. Each user gets 400 tutor calls a day (change `TUTOR_DAILY_LIMIT`).
+The AI key (Gemini or Anthropic) lives only in the Supabase Edge Function, never in the app. Each user gets 400 tutor calls a day (change `TUTOR_DAILY_LIMIT`).
 
 ## Try it right now (no server)
 
@@ -34,19 +34,23 @@ npx expo start
 
 Install **Expo Go** from the App Store on your iPhone, then scan the QR code with the iPhone Camera app.
 
-## Turn on the AI tutor and accounts (one-time setup)
+## Turn on the AI tutor, accounts, and the home-screen app
 
-Step-by-step guide with no coding: **[SETUP.md](SETUP.md)** (Supabase dashboard, no command line).
+Step-by-step guide with no coding and only free plans: **[SETUP.md](SETUP.md)** (Gemini key, Supabase dashboard, Vercel, Add to Home Screen).
 
-Command-line alternative: `npx supabase init`, `npx supabase link --project-ref …`, `npx supabase db push`, `npx supabase secrets set ANTHROPIC_API_KEY=…`, `npx supabase functions deploy tutor`. Then put the Project URL and publishable key in `src/lib/config.ts` (or a `.env` file, see `.env.example`), and add `{{ .Token }}` to the Magic Link email template.
+### Server settings (Supabase → Edge Functions → Secrets)
 
-### Optional server settings
+| Secret | Meaning |
+|---|---|
+| `GEMINI_API_KEY` | Use Google Gemini (free tier available). Takes priority if set. |
+| `GEMINI_MODEL` | Gemini model, default `gemini-flash-latest`. |
+| `ANTHROPIC_API_KEY` | Use Claude instead (paid). |
+| `TUTOR_MODEL` | Claude model, default `claude-opus-5-5`; `claude-haiku-5-5` is much cheaper. |
+| `TUTOR_DAILY_LIMIT` | Tutor requests per user per day, default 400. |
 
-```bash
-npx supabase secrets set TUTOR_MODEL=claude-opus-5-5 TUTOR_DAILY_LIMIT=400
-```
+### Web build
 
-The tutor uses Claude Opus 5.5 by default, with structured JSON outputs and automatic fallback if a request is declined. Set `TUTOR_MODEL=claude-haiku-5-5` for a much cheaper, faster (and less thorough) tutor.
+`npm run build:web` exports the app to `dist/` with home-screen (PWA) tags. Vercel runs this automatically (`vercel.json`).
 
 ## Project layout
 

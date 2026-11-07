@@ -1,4 +1,6 @@
-// De Uno tutor: the only place the Anthropic API key is used.
+// De Uno tutor: the only place the AI key is used.
+// Uses Google Gemini when the GEMINI_API_KEY secret is set (free tier available),
+// otherwise Claude when ANTHROPIC_API_KEY is set.
 // One self-contained file, so it can be pasted into the Supabase dashboard editor.
 // POST { task, data } with the user's Supabase session token → JSON result.
 import Anthropic from 'npm:@anthropic-ai/sdk@1.6.0';
@@ -198,12 +200,69 @@ const TASKS: Record<string, (d: Obj) => TaskSpec> = {
   rp_turn: rpTurn,
 };
 
-// ---------- HTTP handler ----------
-const MODEL = Deno.env.get('TUTOR_MODEL') ?? 'claude-opus-5-5';
+// ---------- AI providers ----------
+const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY');
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-latest';
+const CLAUDE_MODEL = Deno.env.get('TUTOR_MODEL') ?? 'claude-opus-5-5';
 const DAILY_LIMIT = Number(Deno.env.get('TUTOR_DAILY_LIMIT') ?? '400');
 
-const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
+class TutorFail extends Error {
+  constructor(public status: number, public code: string) { super(code); }
+}
 
+async function askGemini(spec: TaskSpec): Promise<unknown> {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY! },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: spec.prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: spec.schema, maxOutputTokens: 8000 },
+    }),
+  });
+  if (res.status === 429) throw new TutorFail(429, 'rate_limited');
+  if (!res.ok) {
+    console.error('Gemini API error', res.status, await res.text());
+    throw new TutorFail(502, 'upstream_error');
+  }
+  const out = await res.json();
+  if (out?.promptFeedback?.blockReason) throw new TutorFail(422, 'refused');
+  const cand = out?.candidates?.[0];
+  if (cand?.finishReason === 'MAX_TOKENS') throw new TutorFail(502, 'truncated');
+  const text = (cand?.content?.parts ?? [])
+    .filter((p: { thought?: boolean; text?: string }) => !p.thought && typeof p.text === 'string')
+    .map((p: { text: string }) => p.text)
+    .join('');
+  if (!text) throw new TutorFail(422, 'refused');
+  return JSON.parse(text);
+}
+
+const anthropic = ANTHROPIC_KEY ? new Anthropic({ apiKey: ANTHROPIC_KEY }) : null;
+
+async function askClaude(spec: TaskSpec): Promise<unknown> {
+  try {
+    const res = await anthropic!.beta.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 8000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: spec.effort, format: { type: 'json_schema', schema: spec.schema } },
+      messages: [{ role: 'user', content: spec.prompt }],
+    });
+    if (res.stop_reason === 'refusal') throw new TutorFail(422, 'refused');
+    if (res.stop_reason === 'max_tokens') throw new TutorFail(502, 'truncated');
+    return JSON.parse(res.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''));
+  } catch (e) {
+    if (e instanceof Anthropic.RateLimitError) throw new TutorFail(429, 'rate_limited');
+    if (e instanceof Anthropic.APIError) {
+      console.error('Anthropic API error', e.status, e.message);
+      throw new TutorFail(502, 'upstream_error');
+    }
+    throw e;
+  }
+}
+
+// ---------- HTTP handler ----------
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -214,6 +273,7 @@ const reply = (status: number, body: unknown) =>
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return reply(405, { code: 'method_not_allowed' });
+  if (!GEMINI_KEY && !ANTHROPIC_KEY) return reply(500, { code: 'no_ai_key' });
 
   // 1. Who is calling? (Supabase also verifies the JWT before this runs.)
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -223,7 +283,7 @@ Deno.serve(async (req) => {
   if (!auth?.user) return reply(401, { code: 'not_signed_in' });
 
   // 2. Build the task.
-  let spec;
+  let spec: TaskSpec;
   try {
     const body = await req.json();
     const build = TASKS[body?.task];
@@ -238,26 +298,11 @@ Deno.serve(async (req) => {
   if (usageErr) return reply(500, { code: 'usage_error' });
   if (Number(calls) > DAILY_LIMIT) return reply(429, { code: 'daily_limit' });
 
-  // 4. Ask Claude for schema-valid JSON.
+  // 4. Ask the AI for schema-valid JSON.
   try {
-    const res = await anthropic.beta.messages.create({
-      model: MODEL,
-      max_tokens: 8000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: { effort: spec.effort, format: { type: 'json_schema', schema: spec.schema } },
-      messages: [{ role: 'user', content: spec.prompt }],
-    });
-    if (res.stop_reason === 'refusal') return reply(422, { code: 'refused' });
-    if (res.stop_reason === 'max_tokens') return reply(502, { code: 'truncated' });
-    const text = res.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-    return reply(200, JSON.parse(text));
+    return reply(200, GEMINI_KEY ? await askGemini(spec) : await askClaude(spec));
   } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) return reply(429, { code: 'rate_limited' });
-    if (e instanceof Anthropic.APIError) {
-      console.error('Anthropic API error', e.status, e.message);
-      return reply(502, { code: 'upstream_error' });
-    }
+    if (e instanceof TutorFail) return reply(e.status, { code: e.code });
     console.error('Tutor error', e);
     return reply(500, { code: 'server_error' });
   }
