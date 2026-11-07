@@ -36,40 +36,9 @@ Install **Expo Go** from the App Store on your iPhone, then scan the QR code wit
 
 ## Turn on the AI tutor and accounts (one-time setup)
 
-You need a free Supabase account and an Anthropic API key.
+Step-by-step guide with no coding: **[SETUP.md](SETUP.md)** (Supabase dashboard, no command line).
 
-1. **Create a Supabase project** at [supabase.com](https://supabase.com/dashboard). Pick a region near you and save the database password somewhere safe.
-2. **Install the Supabase CLI** and link this folder to the project (the project ref is in the dashboard URL):
-
-   ```bash
-   npx supabase login
-   ```
-
-   ```bash
-   npx supabase init
-   ```
-
-   ```bash
-   npx supabase link --project-ref YOUR-PROJECT-REF
-   ```
-3. **Create the tables:**
-
-   ```bash
-   npx supabase db push
-   ```
-4. **Store the Anthropic key on the server**, not in the app (create a key at [console.anthropic.com](https://console.anthropic.com)):
-
-   ```bash
-   npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-   ```
-5. **Deploy the tutor function:**
-
-   ```bash
-   npx supabase functions deploy tutor
-   ```
-6. **Make sign-in send a 6-digit code.** In the dashboard go to Authentication → Emails → "Magic Link" template and make sure the body includes `{{ .Token }}`, e.g. `Your De Uno code is {{ .Token }}`.
-   For more than a few test users, set up custom SMTP (Authentication → SMTP); Supabase's built-in email is rate-limited.
-7. **Point the app at your project:** copy `.env.example` to `.env`, paste the Project URL and publishable (anon) key, then restart `npx expo start`.
+Command-line alternative: `npx supabase init`, `npx supabase link --project-ref …`, `npx supabase db push`, `npx supabase secrets set ANTHROPIC_API_KEY=…`, `npx supabase functions deploy tutor`. Then put the Project URL and publishable key in `src/lib/config.ts` (or a `.env` file, see `.env.example`), and add `{{ .Token }}` to the Magic Link email template.
 
 ### Optional server settings
 
