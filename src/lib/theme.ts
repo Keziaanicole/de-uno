@@ -21,8 +21,8 @@ export const C = {
 export const GOLD_GRADIENT = ['#8c7046', '#e8d3a2', '#a68b5b'] as const;
 
 export const F = {
-  display: 'BodoniModa_700Bold',
-  displayMedium: 'BodoniModa_500Medium',
+  display: 'PlusJakartaSans_700Bold',
+  displayMedium: 'PlusJakartaSans_600SemiBold',
   body: 'Manrope_400Regular',
   bodyMedium: 'Manrope_500Medium',
   bodySemi: 'Manrope_600SemiBold',
