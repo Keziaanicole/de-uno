@@ -46,6 +46,10 @@ You need a free Supabase account and an Anthropic API key.
    ```
 
    ```bash
+   npx supabase init
+   ```
+
+   ```bash
    npx supabase link --project-ref YOUR-PROJECT-REF
    ```
 3. **Create the tables:**
